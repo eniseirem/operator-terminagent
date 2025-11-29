@@ -2,7 +2,7 @@
 
 A browser-based decision game exploring AI alignment and misalignment concepts.
 
-🎮 **Play Online:** [Claude Artifact](https://claude.ai/artifacts/xxxx/terminate-trap](https://claude.ai/public/artifacts/e6bd8ab7-380b-41bb-b8d9-6e7d2c852b47))  
+🎮 **Play Online:** [Claude Artifact](https://claude.ai/public/artifacts/e6bd8ab7-380b-41bb-b8d9-6e7d2c852b47)  
 
 ---
 
