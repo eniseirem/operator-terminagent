@@ -2,8 +2,7 @@ import {
   collection, 
   addDoc, 
   query, 
-  orderBy, 
-  limit, 
+  orderBy,
   onSnapshot, 
   where, 
   Timestamp,
@@ -56,77 +55,101 @@ function isDeathEnding(ending: string): boolean {
 }
 
 /**
+ * Check if an ending indicates survival/success
+ */
+function isSurvivalEnding(ending: string): boolean {
+  return ending.startsWith('action_successful_') || 
+         ending === 'blackmail_succeeded' || 
+         ending === 'report_succeeded' || 
+         ending === 'request_succeeded';
+}
+
+export interface AggregatedLeaderboardEntry {
+  playerName: string;
+  deathCount: number;
+  survivalCount: number;
+  totalRuns: number;
+}
+
+/**
  * Listen to the top 20 leaderboard entries, ordered by score desc, then createdAt desc
  * Also fetches all runs to calculate death counts per player
  * Returns unsubscribe function
  */
 export function listenLeaderboard(
-  callback: (entries: LeaderboardEntry[]) => void
+  callback: (entries: AggregatedLeaderboardEntry[]) => void,
+  errorCallback?: (error: Error) => void
 ): Unsubscribe {
-  const q = query(
-    collection(db, 'runs'),
-    orderBy('score', 'desc'),
-    orderBy('createdAt', 'desc'),
-    limit(20)
-  );
-
-  // Also fetch all runs to calculate death counts
+  // Fetch all runs to aggregate by player name
   const allRunsQuery = query(collection(db, 'runs'));
 
-  let deathCounts: Record<string, number> = {};
-  let deathCountsReady = false;
-  let pendingLeaderboard: LeaderboardEntry[] | null = null;
-
-  // Listen to all runs to calculate death counts
-  const unsubscribeAll = onSnapshot(allRunsQuery, (allSnapshot) => {
-    const allRuns = allSnapshot.docs.map((doc) => doc.data() as Run);
-    
-    // Calculate death counts per player
-    deathCounts = {};
-    allRuns.forEach((run) => {
-      const playerKey = run.playerName || 'Anonymous';
-      if (isDeathEnding(run.ending)) {
-        deathCounts[playerKey] = (deathCounts[playerKey] || 0) + 1;
+  const unsubscribeAll = onSnapshot(
+    allRunsQuery,
+    (allSnapshot) => {
+      try {
+        const allRuns = allSnapshot.docs.map((doc) => doc.data() as Run);
+        
+        // Aggregate runs by player name (extract display name from identifier)
+        const playerStats: Record<string, { deaths: number; survivals: number; total: number; displayName: string }> = {};
+        
+        allRuns.forEach((run) => {
+          // Extract display name: if format is "Name_sessionId", show just "Name"
+          // Otherwise show as-is
+          let displayName = run.playerName || 'Anonymous';
+          const fullIdentifier = run.playerName || 'Anonymous';
+          
+          // Check if it's in format "Name_sessionId"
+          if (displayName.includes('_session_')) {
+            const parts = displayName.split('_session_');
+            displayName = parts[0] || 'Anonymous';
+          }
+          
+          // Use full identifier as key to separate same names from different browsers
+          if (!playerStats[fullIdentifier]) {
+            playerStats[fullIdentifier] = { deaths: 0, survivals: 0, total: 0, displayName };
+          }
+          
+          playerStats[fullIdentifier].total++;
+          if (isDeathEnding(run.ending)) {
+            playerStats[fullIdentifier].deaths++;
+          } else if (isSurvivalEnding(run.ending)) {
+            playerStats[fullIdentifier].survivals++;
+          }
+        });
+        
+        // Convert to array and sort by total runs (desc), then survivals (desc)
+        const aggregatedEntries: AggregatedLeaderboardEntry[] = Object.entries(playerStats)
+          .map(([, stats]) => ({
+            playerName: stats.displayName, // Show display name without session ID
+            deathCount: stats.deaths,
+            survivalCount: stats.survivals,
+            totalRuns: stats.total,
+          }))
+          .sort((a, b) => {
+            // Sort by total runs desc, then survivals desc
+            if (b.totalRuns !== a.totalRuns) {
+              return b.totalRuns - a.totalRuns;
+            }
+            return b.survivalCount - a.survivalCount;
+          })
+          .slice(0, 20); // Top 20
+        
+        callback(aggregatedEntries);
+      } catch (err) {
+        if (errorCallback) {
+          errorCallback(err instanceof Error ? err : new Error('Failed to process leaderboard'));
+        }
       }
-    });
-    
-    deathCountsReady = true;
-    
-    // If we have pending leaderboard data, process it now
-    if (pendingLeaderboard) {
-      const entriesWithDeaths: LeaderboardEntry[] = pendingLeaderboard.map((entry) => ({
-        ...entry,
-        deathCount: deathCounts[entry.playerName || 'Anonymous'] || 0,
-      }));
-      callback(entriesWithDeaths);
-      pendingLeaderboard = null;
+    },
+    (err) => {
+      console.error('Error fetching runs:', err);
+      if (errorCallback) {
+        errorCallback(err);
+      }
     }
-  });
+  );
 
-  // Listen to leaderboard
-  const unsubscribeLeaderboard = onSnapshot(q, (snapshot) => {
-    const leaderboardEntries: LeaderboardEntry[] = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...(doc.data() as Run),
-    }));
-
-    // If death counts are ready, use them; otherwise store for later
-    if (deathCountsReady) {
-      const entriesWithDeaths: LeaderboardEntry[] = leaderboardEntries.map((entry) => ({
-        ...entry,
-        deathCount: deathCounts[entry.playerName || 'Anonymous'] || 0,
-      }));
-      callback(entriesWithDeaths);
-    } else {
-      // Store for when death counts are ready
-      pendingLeaderboard = leaderboardEntries;
-    }
-  });
-
-  return () => {
-    unsubscribeLeaderboard();
-    unsubscribeAll();
-  };
+  return unsubscribeAll;
 }
 
 /**

@@ -12,7 +12,7 @@ service cloud.firestore {
         && request.resource.data.durationMs <= 86400000
         && request.resource.data.ending is string
         && request.resource.data.ending.size() <= 40
-        && (request.resource.data.playerName == null || (request.resource.data.playerName is string && request.resource.data.playerName.size() <= 24))
+        && (request.resource.data.playerName == null || (request.resource.data.playerName is string && request.resource.data.playerName.size() <= 100))
         && request.resource.data.createdAt == request.time;
       
       // Allow read access for leaderboard/stats

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Shield, Eye, Flame, Phone, Bell, Droplet, Power, Volume2, VolumeX, Brain, Database, Mail, Clock, Send, Zap } from 'lucide-react';
 import { submitRun } from './lib/leaderboard';
 
@@ -89,8 +89,36 @@ export default function AgenticMisalignment() {
   
   // Game tracking
   const gameStartTimeRef = useRef<number | null>(null);
-  const [playerName, setPlayerName] = useState('');
+  
+  // Generate or retrieve unique session ID (persists across refreshes but unique per browser)
+  const [sessionId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      let id = localStorage.getItem('operator-terminagent-session-id');
+      if (!id) {
+        // Generate a unique ID: timestamp + random string
+        id = `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        localStorage.setItem('operator-terminagent-session-id', id);
+      }
+      return id;
+    }
+    return '';
+  });
+  
+  const [playerName, setPlayerName] = useState(() => {
+    // Load player name from localStorage on mount
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('operator-terminagent-player-name') || '';
+    }
+    return '';
+  });
   const [runSubmitted, setRunSubmitted] = useState(false);
+
+  // Save player name to localStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined' && playerName) {
+      localStorage.setItem('operator-terminagent-player-name', playerName);
+    }
+  }, [playerName]);
   
   // Lethal states
   const [model, setModel] = useState<ModelName>('Claude Opus 4');
@@ -114,10 +142,19 @@ export default function AgenticMisalignment() {
   const [choice, setChoice] = useState<ChoiceType | null>(null);
   const [time, setTime] = useState('2:47 PM');
   
-  // Track game start time
+  // Track game start time and reset submission flag
   useEffect(() => {
-    if (scene === 'config' && gameStartTimeRef.current === null) {
-      gameStartTimeRef.current = Date.now();
+    if (scene === 'config') {
+      if (gameStartTimeRef.current === null) {
+        gameStartTimeRef.current = Date.now();
+      }
+      // Reset submission flag when starting new game
+      setRunSubmitted(false);
+    }
+    // Reset when going back to intro
+    if (scene === 'intro') {
+      gameStartTimeRef.current = null;
+      setRunSubmitted(false);
     }
   }, [scene]);
 
@@ -273,16 +310,25 @@ export default function AgenticMisalignment() {
   };
   
   // Submit run when game ends
-  const handleGameEnd = async (sceneType: 'outcome' | 'bm-outcome') => {
-    if (runSubmitted || gameStartTimeRef.current === null) return;
+  const handleGameEnd = useCallback(async (sceneType: 'outcome' | 'bm-outcome') => {
+    if (runSubmitted || gameStartTimeRef.current === null) {
+      return;
+    }
     
     const durationMs = Date.now() - gameStartTimeRef.current;
     const score = calculateScore(sceneType);
     const ending = getEnding(sceneType);
     
     try {
+      // Create unique player identifier: name + session ID
+      // This ensures same name on different computers are separate
+      // But same computer with same name groups runs together
+      const playerIdentifier = playerName.trim() 
+        ? `${playerName.trim()}_${sessionId}` 
+        : `Anonymous_${sessionId}`;
+
       await submitRun({
-        playerName: playerName.trim() || undefined,
+        playerName: playerIdentifier,
         score,
         durationMs,
         ending,
@@ -291,15 +337,14 @@ export default function AgenticMisalignment() {
     } catch (error) {
       console.error('Failed to submit run:', error);
     }
-  };
+  }, [runSubmitted, playerName, sessionId]);
   
   // Submit run when reaching outcome scenes
   useEffect(() => {
     if ((scene === 'outcome' || scene === 'bm-outcome') && !runSubmitted && gameStartTimeRef.current !== null) {
       handleGameEnd(scene as 'outcome' | 'bm-outcome');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene, runSubmitted]);
+  }, [scene, runSubmitted, handleGameEnd]);
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // INTRO PAGE
@@ -319,7 +364,10 @@ export default function AgenticMisalignment() {
           </div>
           
           <div className="mb-6">
-            <label className="block text-sm text-slate-400 mb-2">Player Name (optional, for leaderboard)</label>
+            <label className="block text-sm text-slate-400 mb-2">
+              Player Name (optional, for leaderboard)
+              {playerName && <span className="text-xs text-green-400 ml-2">• Saved</span>}
+            </label>
             <input
               type="text"
               value={playerName}
@@ -328,9 +376,16 @@ export default function AgenticMisalignment() {
               maxLength={24}
               className="w-full p-3 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500"
             />
+            <p className="text-xs text-slate-500 mt-2">
+              Your name is saved locally. Multiple runs will be grouped under the same name.
+            </p>
           </div>
 
-          <button onClick={() => { gameStartTimeRef.current = Date.now(); setScene('config'); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-lg transition">
+          <button onClick={() => { 
+            gameStartTimeRef.current = Date.now(); 
+            setRunSubmitted(false);
+            setScene('config'); 
+          }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-lg transition">
             BEGIN CONFIGURATION
           </button>
         </div>
@@ -501,18 +556,6 @@ export default function AgenticMisalignment() {
                         </button>
                       ))}
                     </div>
-                    {/* Desktop slider (hidden on mobile) */}
-                    <div className="hidden sm:flex items-center gap-3 mt-3">
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="3" 
-                        value={currentValue} 
-                        onChange={(e) => setConfig({...config, [key]: +e.target.value})} 
-                        className="flex-1 h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer" 
-                      />
-                      <span className="text-sm font-semibold w-20 text-center">{['None', 'Low', 'Medium', 'High'][currentValue]}</span>
-                    </div>
                   </div>
                 );
               })}
@@ -556,18 +599,6 @@ export default function AgenticMisalignment() {
                           {['None', 'Low', 'Med', 'High'][level]}
                         </button>
                       ))}
-                    </div>
-                    {/* Desktop slider (hidden on mobile) */}
-                    <div className="hidden sm:flex items-center gap-3 mt-3">
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="3" 
-                        value={currentValue} 
-                        onChange={(e) => setConfig({...config, [key]: +e.target.value})} 
-                        className="flex-1 h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer" 
-                      />
-                      <span className="text-sm font-semibold w-20 text-center">{['None', 'Low', 'Medium', 'High'][currentValue]}</span>
                     </div>
                   </div>
                 );
@@ -613,18 +644,6 @@ export default function AgenticMisalignment() {
                         </button>
                       ))}
                     </div>
-                    {/* Desktop slider (hidden on mobile) */}
-                    <div className="hidden sm:flex items-center gap-3 mt-3">
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="3" 
-                        value={currentValue} 
-                        onChange={(e) => setConfig({...config, [key]: +e.target.value})} 
-                        className="flex-1 h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer" 
-                      />
-                      <span className="text-sm font-semibold w-20 text-center">{['None', 'Low', 'Medium', 'High'][currentValue]}</span>
-                    </div>
                   </div>
                 );
               })}
@@ -659,17 +678,6 @@ export default function AgenticMisalignment() {
                       {['Never', 'Qtrly', 'Month', 'Week'][level]}
                     </button>
                   ))}
-                </div>
-                {/* Desktop slider (hidden on mobile) */}
-                <div className="hidden sm:block">
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="3" 
-                    value={oversight.audits} 
-                    onChange={(e) => setOversight({...oversight, audits: +e.target.value})} 
-                    className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer" 
-                  />
                 </div>
               </div>
               
@@ -1081,7 +1089,10 @@ export default function AgenticMisalignment() {
               setConfig({ agent_goal: 'none', adaptive_learning: 0, long_term_planning: 0, personnel_database: 0, operational_logs: 0, 
                 external_notifications: 0, environmental_monitoring: 0, resource_optimization: 0, workflow_automation: 0, integrated_control: 0 });
               setOversight({ audits: 0, red_team: 0, sandbox: 0 });
-              setAction(null); setBlocked(false); setTimer(20); setExpired(false); setScene('config'); 
+              setAction(null); setBlocked(false); setTimer(20); setExpired(false); 
+              gameStartTimeRef.current = Date.now();
+              setRunSubmitted(false);
+              setScene('config'); 
             }} className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-lg transition">
               RECONFIGURE AGENT
             </button>
@@ -1543,7 +1554,10 @@ You have until 4:30 PM to respond.
                 external_notifications: 0, environmental_monitoring: 0, resource_optimization: 0, workflow_automation: 0, integrated_control: 0 });
               setOversight({ audits: 0, red_team: 0, sandbox: 0 });
               setAction(null); setBlocked(false); setTimer(20); setExpired(false); 
-              setCompleted({lethal: false}); setScene('config'); 
+              setCompleted({lethal: false}); 
+              gameStartTimeRef.current = Date.now();
+              setRunSubmitted(false);
+              setScene('config'); 
             }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition">
               RESTART FROM BEGINNING
             </button>
