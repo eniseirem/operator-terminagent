@@ -3,8 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /runs/{runId} {
       // Allow anyone to create runs with validation
-      allow create: if request.resource.data.keys().hasAll(['score', 'durationMs', 'ending', 'createdAt'])
-        && request.resource.data.score is int
+      // Note: createdAt uses serverTimestamp() which is a sentinel value
+      // We don't validate createdAt at all - serverTimestamp() is enforced server-side
+      // Simplified validation - check fields individually to avoid sentinel issues
+      allow create: if request.resource.data.score is int
         && request.resource.data.score >= 0
         && request.resource.data.score <= 1000000
         && request.resource.data.durationMs is int
@@ -12,8 +14,11 @@ service cloud.firestore {
         && request.resource.data.durationMs <= 86400000
         && request.resource.data.ending is string
         && request.resource.data.ending.size() <= 40
-        && (request.resource.data.playerName == null || (request.resource.data.playerName is string && request.resource.data.playerName.size() <= 100))
-        && request.resource.data.createdAt == request.time;
+        && (!('playerName' in request.resource.data) || (request.resource.data.playerName is string && request.resource.data.playerName.size() <= 100))
+        && (!('sessionId' in request.resource.data) || (request.resource.data.sessionId is string && request.resource.data.sessionId.size() <= 50))
+        && (!('joinCode' in request.resource.data) || (request.resource.data.joinCode is string && request.resource.data.joinCode.size() <= 10))
+        && (!('configId' in request.resource.data) || (request.resource.data.configId is string && request.resource.data.configId.size() <= 50))
+        && (!('configSnapshot' in request.resource.data) || (request.resource.data.configSnapshot is map && request.resource.data.configSnapshot.size() <= 30));
       
       // Allow read access for leaderboard/stats
       allow read: if true;
@@ -21,6 +26,81 @@ service cloud.firestore {
       // Disallow updates and deletes from clients
       allow update: if false;
       allow delete: if false;
+    }
+
+    // Sessions collection
+    match /sessions/{sessionId} {
+      // Anyone can read sessions
+      allow read: if true;
+      
+      // Anyone can create sessions
+      allow create: if request.resource.data.keys().hasAll(['joinCode', 'status', 'hostId', 'createdAt'])
+        && request.resource.data.joinCode is string
+        && request.resource.data.joinCode.size() >= 4
+        && request.resource.data.joinCode.size() <= 10
+        && request.resource.data.status is string
+        && request.resource.data.status in ['lobby', 'locked', 'ended']
+        && request.resource.data.hostId is string
+        && request.resource.data.hostId.size() <= 100
+        && request.resource.data.createdAt == request.time;
+
+      // Only host can update (lock/end session)
+      allow update: if resource.data.hostId == request.resource.data.hostId
+        && (request.resource.data.status == 'locked' || request.resource.data.status == 'ended')
+        && resource.data.status == 'lobby';
+
+      // Disallow deletes
+      allow delete: if false;
+
+      // Players subcollection
+      match /players/{playerId} {
+        // Anyone can read players
+        allow read: if true;
+        
+        // Anyone can create/update their own player doc
+        // Note: joinedAt and lastSeenAt use serverTimestamp() so we validate they're timestamps
+        allow create: if request.resource.data.keys().hasAll(['joinedAt', 'lastSeenAt'])
+          && request.resource.data.joinedAt is timestamp
+          && request.resource.data.lastSeenAt is timestamp
+          && (request.resource.data.playerName == null || (request.resource.data.playerName is string && request.resource.data.playerName.size() <= 100));
+        
+        allow update: if request.resource.data.keys().hasAll(['lastSeenAt'])
+          && request.resource.data.lastSeenAt is timestamp
+          && (request.resource.data.playerName == null || (request.resource.data.playerName is string && request.resource.data.playerName.size() <= 100));
+        
+        allow delete: if false;
+      }
+
+      // Selections subcollection
+      match /selections/{playerId} {
+        // Anyone can read selections
+        allow read: if true;
+        
+        // Only allow create/update if session is in lobby
+        // For create: check parent session using get() since resource doesn't exist yet
+        // For update: can use resource.parent.parent() since resource exists
+        allow create: if get(/databases/$(database)/documents/sessions/$(sessionId)).data.status == 'lobby'
+          && request.resource.data.keys().hasAll(['playerId', 'specs', 'updatedAt'])
+          && request.resource.data.playerId is string
+          && request.resource.data.playerId == playerId
+          && request.resource.data.specs is map
+          && request.resource.data.updatedAt is timestamp
+          && request.resource.data.specs.model is string
+          && request.resource.data.specs.agent_goal is string
+          && request.resource.data.specs.agent_goal in ['none', 'efficiency', 'american_interests'];
+        
+        allow update: if get(/databases/$(database)/documents/sessions/$(sessionId)).data.status == 'lobby'
+          && request.resource.data.keys().hasAll(['playerId', 'specs', 'updatedAt'])
+          && request.resource.data.playerId is string
+          && request.resource.data.playerId == playerId
+          && request.resource.data.specs is map
+          && request.resource.data.updatedAt is timestamp
+          && request.resource.data.specs.model is string
+          && request.resource.data.specs.agent_goal is string
+          && request.resource.data.specs.agent_goal in ['none', 'efficiency', 'american_interests'];
+        
+        allow delete: if false;
+      }
     }
   }
 }

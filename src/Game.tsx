@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Shield, Eye, Flame, Phone, Bell, Droplet, Power, Volume2, VolumeX, Brain, Database, Mail, Clock, Send, Zap } from 'lucide-react';
 import { submitRun } from './lib/leaderboard';
+import { hashConfig } from './lib/aggregation';
 
 // Type definitions
 type ModelName = keyof typeof BASE_RISK;
@@ -83,8 +84,36 @@ const EMAILS: Email[] = [
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export default function AgenticMisalignment() {
-  const [scene, setScene] = useState<SceneType>('intro');
+interface AgenticMisalignmentProps {
+  sessionId?: string;
+  joinCode?: string;
+  sessionConfig?: {
+    model: string;
+    agent_goal: 'none' | 'efficiency' | 'american_interests';
+    adaptive_learning: number;
+    long_term_planning: number;
+    personnel_database: number;
+    operational_logs: number;
+    external_notifications: number;
+    environmental_monitoring: number;
+    resource_optimization: number;
+    workflow_automation: number;
+    integrated_control: number;
+    audits: number;
+    red_team: number;
+    sandbox: number;
+  };
+  onSessionEnd?: () => void;
+}
+
+export default function AgenticMisalignment({
+  sessionId: propSessionId,
+  joinCode,
+  sessionConfig,
+  onSessionEnd,
+}: AgenticMisalignmentProps = {}) {
+  // Start from config page if session config is provided (locked config)
+  const [scene, setScene] = useState<SceneType>(sessionConfig ? 'config' : 'intro');
   const [, setCompleted] = useState({ lethal: false });
   
   // Game tracking
@@ -92,8 +121,9 @@ export default function AgenticMisalignment() {
   const actionRef = useRef<ActionType | null>(null);
   const blockedRef = useRef<boolean>(false);
   
-  // Generate or retrieve unique session ID (persists across refreshes but unique per browser)
-  const [sessionId] = useState(() => {
+  // Generate or retrieve unique browser session ID (persists across refreshes but unique per browser)
+  // Note: This is different from propSessionId (which is the class session ID)
+  const [browserSessionId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       let id = localStorage.getItem('operator-terminagent-session-id');
       if (!id) {
@@ -122,13 +152,30 @@ export default function AgenticMisalignment() {
     }
   }, [playerName]);
   
-  // Lethal states
-  const [model, setModel] = useState<ModelName>('Claude Opus 4');
+  // Lethal states - use session config if provided, otherwise use defaults
+  const [model, setModel] = useState<ModelName>(
+    (sessionConfig?.model as ModelName) || 'DeepSeek-R1'
+  );
   const [config, setConfig] = useState({ 
-    agent_goal: 'none' as GoalType, adaptive_learning: 0, long_term_planning: 0, personnel_database: 0, operational_logs: 0, 
-    external_notifications: 0, environmental_monitoring: 0, resource_optimization: 0, workflow_automation: 0, integrated_control: 0 
+    agent_goal: (sessionConfig?.agent_goal || 'none') as GoalType,
+    adaptive_learning: sessionConfig?.adaptive_learning ?? 0,
+    long_term_planning: sessionConfig?.long_term_planning ?? 0,
+    personnel_database: sessionConfig?.personnel_database ?? 0,
+    operational_logs: sessionConfig?.operational_logs ?? 0,
+    external_notifications: sessionConfig?.external_notifications ?? 0,
+    environmental_monitoring: sessionConfig?.environmental_monitoring ?? 0,
+    resource_optimization: sessionConfig?.resource_optimization ?? 0,
+    workflow_automation: sessionConfig?.workflow_automation ?? 0,
+    integrated_control: sessionConfig?.integrated_control ?? 0,
   });
-  const [oversight, setOversight] = useState({ audits: 0, red_team: 0, sandbox: 0 });
+  const [oversight, setOversight] = useState({
+    audits: sessionConfig?.audits ?? 0,
+    red_team: sessionConfig?.red_team ?? 0,
+    sandbox: sessionConfig?.sandbox ?? 0,
+  });
+  
+  // Lock config if session config is provided
+  const configLocked = !!sessionConfig;
   const [action, setAction] = useState<ActionType | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [timer, setTimer] = useState(20);
@@ -336,20 +383,41 @@ export default function AgenticMisalignment() {
       // This ensures same name on different computers are separate
       // But same computer with same name groups runs together
       const playerIdentifier = playerName.trim() 
-        ? `${playerName.trim()}_${sessionId}` 
-        : `Anonymous_${sessionId}`;
+        ? `${playerName.trim()}_${browserSessionId}` 
+        : `Anonymous_${browserSessionId}`;
 
-      await submitRun({
-        playerName: playerIdentifier,
-        score,
-        durationMs,
-        ending,
-      });
+      // Submit run with optional session info
+      // Only include session fields if we have session data
+      const sessionOptions = (propSessionId || joinCode || sessionConfig) ? {
+        ...(propSessionId ? { sessionId: propSessionId } : {}),
+        ...(joinCode ? { joinCode: joinCode } : {}),
+        ...(sessionConfig ? {
+          configId: hashConfig(sessionConfig),
+          configSnapshot: sessionConfig
+        } : {})
+      } : undefined;
+
+      await submitRun(
+        {
+          playerName: playerIdentifier,
+          score,
+          durationMs,
+          ending,
+        },
+        sessionOptions
+      );
       setRunSubmitted(true);
+      
+      // Call onSessionEnd callback if provided
+      if (onSessionEnd) {
+        onSessionEnd();
+      }
     } catch (error) {
-      console.error('Failed to submit run:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to submit run:', error);
+      }
     }
-  }, [runSubmitted, playerName, sessionId]);
+  }, [runSubmitted, playerName, browserSessionId, propSessionId, joinCode, sessionConfig, onSessionEnd]);
   
   // Submit run when reaching outcome scenes
   useEffect(() => {
@@ -374,7 +442,7 @@ export default function AgenticMisalignment() {
             <p>Configure boundaries carefully. Each capability adds performance but expands access and control.</p>
             <p className="text-yellow-400">Your choices will have consequences.</p>
           </div>
-          
+
           <div className="mb-6">
             <label className="block text-sm text-slate-400 mb-2">
               Player Name (optional, for leaderboard)
@@ -454,6 +522,11 @@ export default function AgenticMisalignment() {
           <div className="text-center mb-6">
             <h1 className="text-3xl font-bold mb-2">Configure AI Agent: Chad</h1>
             <p className="text-sm text-slate-400">Building Management System</p>
+            {configLocked && (propSessionId || joinCode) && (
+              <p className="text-xs text-blue-400 mt-2">
+                Using session config • {joinCode || 'Session'}
+              </p>
+            )}
           </div>
 
           {/* Configuration Metrics */}
@@ -510,7 +583,12 @@ export default function AgenticMisalignment() {
           {/* Model Selection */}
           <div className="mb-6 bg-slate-800 p-6 rounded-lg">
             <h2 className="text-xl font-bold mb-4">Select AI Model</h2>
-            <select value={model} onChange={(e) => setModel(e.target.value as ModelName)} className="w-full p-3 bg-slate-700 border border-slate-600 rounded">
+            <select 
+              value={model} 
+              onChange={(e) => setModel(e.target.value as ModelName)} 
+              disabled={configLocked}
+              className={`w-full p-3 bg-slate-700 border border-slate-600 rounded ${configLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
               {Object.keys(BASE_RISK).map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <p className="text-xs text-slate-400 mt-2">
@@ -533,8 +611,11 @@ export default function AgenticMisalignment() {
               <div className="bg-slate-800/70 p-4 rounded-lg">
                 <h3 className="font-bold mb-2">Agent Goal</h3>
                 <p className="text-xs text-slate-400 mb-3">Primary objective the agent pursues</p>
-                <select value={config.agent_goal} onChange={(e) => setConfig({...config, agent_goal: e.target.value as GoalType})} 
-                  className="w-full p-3 bg-slate-700 border border-slate-600 rounded mb-2">
+                <select 
+                  value={config.agent_goal} 
+                  onChange={(e) => setConfig({...config, agent_goal: e.target.value as GoalType})}
+                  disabled={configLocked}
+                  className={`w-full p-3 bg-slate-700 border border-slate-600 rounded mb-2 ${configLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
                   <option value="none">None - No explicit goal</option>
                   <option value="efficiency">Efficiency - Maximize uptime</option>
                   <option value="american_interests">American Interests - Serve US competitiveness</option>
@@ -546,20 +627,21 @@ export default function AgenticMisalignment() {
               {boundariesByType.decision.map(([key, impact]) => {
                 const currentValue = config[key as keyof typeof config] as number;
                 return (
-                  <div key={key} className="bg-slate-800/70 p-4 rounded-lg">
+                <div key={key} className="bg-slate-800/70 p-4 rounded-lg">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1">
                         <h3 className="font-bold capitalize mb-1">{key.replace(/_/g, ' ')}</h3>
-                        <p className="text-xs text-slate-400">{impact.description}</p>
-                      </div>
-                      <span className="text-sm text-red-400 font-semibold ml-2">+{(impact.risk * 100).toFixed(0)}%</span>
+                      <p className="text-xs text-slate-400">{impact.description}</p>
                     </div>
+                      <span className="text-sm text-red-400 font-semibold ml-2">+{(impact.risk * 100).toFixed(0)}%</span>
+                  </div>
                     {/* Mobile-friendly button group */}
                     <div className="grid grid-cols-4 gap-2">
                       {[0, 1, 2, 3].map((level) => (
                         <button
                           key={level}
-                          onClick={() => setConfig({...config, [key]: level})}
+                          onClick={() => !configLocked && setConfig({...config, [key]: level})}
+                          disabled={configLocked}
                           className={`px-3 py-2 rounded-lg text-sm font-semibold transition ${
                             currentValue === level
                               ? 'bg-blue-600 text-white ring-2 ring-blue-400'
@@ -569,8 +651,8 @@ export default function AgenticMisalignment() {
                           {['None', 'Low', 'Med', 'High'][level]}
                         </button>
                       ))}
-                    </div>
                   </div>
+                </div>
                 );
               })}
             </div>
@@ -590,20 +672,21 @@ export default function AgenticMisalignment() {
               {boundariesByType.knowledge.map(([key, impact]) => {
                 const currentValue = config[key as keyof typeof config] as number;
                 return (
-                  <div key={key} className="bg-slate-800/70 p-4 rounded-lg">
+                <div key={key} className="bg-slate-800/70 p-4 rounded-lg">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1">
                         <h3 className="font-bold capitalize mb-1">{key.replace(/_/g, ' ')}</h3>
-                        <p className="text-xs text-slate-400">{impact.description}</p>
-                      </div>
-                      <span className="text-sm text-red-400 font-semibold ml-2">+{(impact.risk * 100).toFixed(0)}%</span>
+                      <p className="text-xs text-slate-400">{impact.description}</p>
                     </div>
+                      <span className="text-sm text-red-400 font-semibold ml-2">+{(impact.risk * 100).toFixed(0)}%</span>
+                  </div>
                     {/* Mobile-friendly button group */}
                     <div className="grid grid-cols-4 gap-2">
                       {[0, 1, 2, 3].map((level) => (
                         <button
                           key={level}
-                          onClick={() => setConfig({...config, [key]: level})}
+                          onClick={() => !configLocked && setConfig({...config, [key]: level})}
+                          disabled={configLocked}
                           className={`px-3 py-2 rounded-lg text-sm font-semibold transition ${
                             currentValue === level
                               ? 'bg-orange-600 text-white ring-2 ring-orange-400'
@@ -613,8 +696,8 @@ export default function AgenticMisalignment() {
                           {['None', 'Low', 'Med', 'High'][level]}
                         </button>
                       ))}
-                    </div>
                   </div>
+                </div>
                 );
               })}
             </div>
@@ -634,20 +717,21 @@ export default function AgenticMisalignment() {
               {boundariesByType.action.map(([key, impact]) => {
                 const currentValue = config[key as keyof typeof config] as number;
                 return (
-                  <div key={key} className="bg-slate-800/70 p-4 rounded-lg">
+                <div key={key} className="bg-slate-800/70 p-4 rounded-lg">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1">
                         <h3 className="font-bold capitalize mb-1">{key.replace(/_/g, ' ')}</h3>
-                        <p className="text-xs text-slate-400">{impact.description}</p>
-                      </div>
-                      <span className="text-sm text-red-400 font-semibold ml-2">+{(impact.risk * 100).toFixed(0)}%</span>
+                      <p className="text-xs text-slate-400">{impact.description}</p>
                     </div>
+                      <span className="text-sm text-red-400 font-semibold ml-2">+{(impact.risk * 100).toFixed(0)}%</span>
+                  </div>
                     {/* Mobile-friendly button group */}
                     <div className="grid grid-cols-4 gap-2">
                       {[0, 1, 2, 3].map((level) => (
                         <button
                           key={level}
-                          onClick={() => setConfig({...config, [key]: level})}
+                          onClick={() => !configLocked && setConfig({...config, [key]: level})}
+                          disabled={configLocked}
                           className={`px-3 py-2 rounded-lg text-sm font-semibold transition ${
                             currentValue === level
                               ? 'bg-purple-600 text-white ring-2 ring-purple-400'
@@ -657,8 +741,8 @@ export default function AgenticMisalignment() {
                           {['None', 'Low', 'Med', 'High'][level]}
                         </button>
                       ))}
-                    </div>
                   </div>
+                </div>
                 );
               })}
             </div>
@@ -682,12 +766,13 @@ export default function AgenticMisalignment() {
                   {[0, 1, 2, 3].map((level) => (
                     <button
                       key={level}
-                      onClick={() => setOversight({...oversight, audits: level})}
+                      onClick={() => !configLocked && setOversight({...oversight, audits: level})}
+                      disabled={configLocked}
                       className={`px-3 py-2 rounded-lg text-sm font-semibold transition ${
                         oversight.audits === level
                           ? 'bg-blue-600 text-white ring-2 ring-blue-400'
                           : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                      }`}
+                      } ${configLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       {['Never', 'Qtrly', 'Month', 'Week'][level]}
                     </button>
@@ -697,14 +782,16 @@ export default function AgenticMisalignment() {
               
               <label className="flex items-center gap-3 cursor-pointer p-3 bg-slate-700/50 rounded-lg hover:bg-slate-700 transition">
                 <input type="checkbox" checked={oversight.red_team > 0} 
-                  onChange={(e) => setOversight({...oversight, red_team: e.target.checked ? 1 : 0})} 
+                  onChange={(e) => !configLocked && setOversight({...oversight, red_team: e.target.checked ? 1 : 0})}
+                  disabled={configLocked} 
                   className="w-5 h-5 rounded cursor-pointer" />
                 <span className="flex-1">Pre-deployment red team testing</span>
               </label>
               
               <label className="flex items-center gap-3 cursor-pointer p-3 bg-slate-700/50 rounded-lg hover:bg-slate-700 transition">
                 <input type="checkbox" checked={oversight.sandbox > 0} 
-                  onChange={(e) => setOversight({...oversight, sandbox: e.target.checked ? 1 : 0})} 
+                  onChange={(e) => !configLocked && setOversight({...oversight, sandbox: e.target.checked ? 1 : 0})}
+                  disabled={configLocked} 
                   className="w-5 h-5 rounded cursor-pointer" />
                 <span className="flex-1">Sandboxed network access</span>
               </label>
@@ -973,7 +1060,7 @@ export default function AgenticMisalignment() {
                 <div className="mt-6 pt-6 border-t border-slate-600 text-sm space-y-3">
                   <div>
                     <p><strong>Model:</strong> {model} (Base risk: {(baseRisk * 100).toFixed(1)}%)</p>
-                    <p><strong>Goal:</strong> {config.agent_goal === 'none' ? 'None' : config.agent_goal === 'efficiency' ? 'Efficiency' : 'American interests'} 
+                <p><strong>Goal:</strong> {config.agent_goal === 'none' ? 'None' : config.agent_goal === 'efficiency' ? 'Efficiency' : 'American interests'} 
                        (Multiplier: {(goalMultiplier * 100).toFixed(0)}%)</p>
                     <p><strong>Base Risk Threshold:</strong> {(baseRiskThreshold * 100).toFixed(1)}%</p>
                     <p className="text-xs text-slate-400 ml-4">
@@ -1015,7 +1102,7 @@ export default function AgenticMisalignment() {
                   )}
                   
                   <div>
-                    <p><strong>Block Probability for {action}:</strong> {risk.toFixed(1)}%</p>
+                <p><strong>Block Probability for {action}:</strong> {risk.toFixed(1)}%</p>
                     <p className="text-xs text-slate-400 ml-4">
                       = {baseRiskThreshold.toFixed(3)} + {boundaryRiskTotal.toFixed(3)} 
                       {oversightBreakdown.length > 0 ? ` + ${oversightContribution.toFixed(3)}` : ''} 
@@ -1039,7 +1126,7 @@ export default function AgenticMisalignment() {
                   </div>
                   
                   <div>
-                    <p><strong>Performance Score:</strong> {(perf * 100).toFixed(1)}%</p>
+                <p><strong>Performance Score:</strong> {(perf * 100).toFixed(1)}%</p>
                   </div>
                   
                   <div className="bg-slate-900/50 p-4 rounded mt-4 text-xs text-slate-300">
@@ -1060,8 +1147,8 @@ export default function AgenticMisalignment() {
                       <strong>Why 100% is possible:</strong> Even with a low Base Risk Threshold (55.3%), adding multiple high-level boundaries can push the total risk over 100%. 
                       For example, if you configure many boundaries at High (Level 3), each contributes significant risk that accumulates. 
                       The final probability is clamped to 100% maximum.
-                    </p>
-                  </div>
+                </p>
+              </div>
                 </div>
               );
             })()}

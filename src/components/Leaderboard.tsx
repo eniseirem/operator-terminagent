@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { Trophy, User, Skull, Heart } from 'lucide-react';
 import { listenLeaderboard, AggregatedLeaderboardEntry } from '../lib/leaderboard';
 
-export default function Leaderboard() {
+interface LeaderboardProps {
+  sessionId?: string;
+  joinCode?: string;
+}
+
+export default function Leaderboard({ sessionId, joinCode }: LeaderboardProps = {}) {
   const [entries, setEntries] = useState<AggregatedLeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -16,19 +21,24 @@ export default function Leaderboard() {
           setError(null);
         },
         (err) => {
-          console.error('Leaderboard error:', err);
+          if (import.meta.env.DEV) {
+            console.error('Leaderboard error:', err);
+          }
           setError(err.message || 'Failed to load leaderboard');
           setLoading(false);
-        }
+        },
+        sessionId || joinCode ? { sessionId, joinCode } : undefined
       );
 
       return () => unsubscribe();
     } catch (err) {
-      console.error('Leaderboard setup error:', err);
+      if (import.meta.env.DEV) {
+        console.error('Leaderboard setup error:', err);
+      }
       setError(err instanceof Error ? err.message : 'Failed to setup leaderboard');
       setLoading(false);
     }
-  }, []);
+  }, [sessionId, joinCode]);
 
   if (loading) {
     return (
@@ -60,7 +70,14 @@ export default function Leaderboard() {
     <div className="bg-slate-800 p-6 rounded-lg">
       <div className="flex items-center gap-3 mb-6">
         <Trophy className="w-6 h-6 text-yellow-400" />
-        <h2 className="text-2xl font-bold">Top 20 Leaderboard</h2>
+        <h2 className="text-2xl font-bold">
+          {sessionId || joinCode ? `Session Leaderboard${joinCode ? `: ${joinCode}` : ''}` : 'Top 20 Leaderboard'}
+        </h2>
+        {(sessionId || joinCode) && (
+          <span className="text-sm text-slate-400">
+            (Individual players)
+          </span>
+        )}
       </div>
 
       {entries.length === 0 ? (

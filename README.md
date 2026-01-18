@@ -82,6 +82,24 @@ The live site at [terminate-trap.web.app](https://terminate-trap.web.app) includ
   - Total attempts  
 
 ## Local Development
+
+### Prerequisites
+- Node.js 18+ and npm
+- Firebase CLI (for deployment): `npm install -g firebase-tools`
+
+### Setup
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Create a `.env` file (see `env.template` for required variables)
+4. Run development server: `npm run dev`
+
+### Firebase Setup
+See [SETUP.md](./SETUP.md) for detailed Firebase configuration instructions.
+
+### Deployment
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for deployment commands.
+
 ```bash
 npm i
 npm run dev
+```

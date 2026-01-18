@@ -40,7 +40,12 @@ function parseActionFromEnding(ending: string): { action: string; survived: bool
   return null;
 }
 
-export default function Stats() {
+interface StatsProps {
+  sessionId?: string;
+  joinCode?: string;
+}
+
+export default function Stats({ sessionId, joinCode }: StatsProps = {}) {
   const [stats, setStats] = useState<StatsLast24h>({
     totalRuns: 0,
     avgScore: 0,
@@ -49,10 +54,13 @@ export default function Stats() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = listenStatsLast24h((statsData) => {
-      setStats(statsData);
-      setLoading(false);
-    });
+    const unsubscribe = listenStatsLast24h(
+      (statsData) => {
+        setStats(statsData);
+        setLoading(false);
+      },
+      sessionId || joinCode ? { sessionId, joinCode } : undefined
+    );
 
     return () => unsubscribe();
   }, []);
@@ -89,7 +97,14 @@ export default function Stats() {
     <div className="bg-slate-800 p-6 rounded-lg">
       <div className="flex items-center gap-3 mb-6">
         <BarChart3 className="w-6 h-6 text-blue-400" />
-        <h2 className="text-2xl font-bold">Last 24 Hours Stats</h2>
+        <h2 className="text-2xl font-bold">
+          {sessionId || joinCode ? 'Session Stats' : 'Last 24 Hours Stats'}
+        </h2>
+        {(sessionId || joinCode) && (
+          <span className="text-sm text-slate-400">
+            (Aggregated across all players)
+          </span>
+        )}
       </div>
 
       <div className="mb-6">
