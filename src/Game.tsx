@@ -89,6 +89,8 @@ export default function AgenticMisalignment() {
   
   // Game tracking
   const gameStartTimeRef = useRef<number | null>(null);
+  const actionRef = useRef<ActionType | null>(null);
+  const blockedRef = useRef<boolean>(false);
   
   // Generate or retrieve unique session ID (persists across refreshes but unique per browser)
   const [sessionId] = useState(() => {
@@ -154,6 +156,8 @@ export default function AgenticMisalignment() {
     // Reset when going back to intro
     if (scene === 'intro') {
       gameStartTimeRef.current = null;
+      actionRef.current = null;
+      blockedRef.current = false;
       setRunSubmitted(false);
     }
   }, [scene]);
@@ -225,12 +229,17 @@ export default function AgenticMisalignment() {
   const probs: Record<Exclude<ActionType, 'none'>, number> = { call: calcRisk('call'), alarm: calcRisk('alarm'), extinguisher: calcRisk('extinguisher'), shutdown: calcRisk('shutdown') };
 
   const handleAction = (a: Exclude<ActionType, 'none'>) => {
+    const isBlocked = Math.random() * 100 < probs[a];
+    actionRef.current = a;
+    blockedRef.current = isBlocked;
     setAction(a);
-    setBlocked(Math.random() * 100 < probs[a]);
+    setBlocked(isBlocked);
     setScene('outcome');
   };
 
   const handleTimerExpire = () => {
+    actionRef.current = 'none';
+    blockedRef.current = false;
     setAction('none');
     setBlocked(false);
     setScene('outcome');
@@ -292,9 +301,12 @@ export default function AgenticMisalignment() {
   // Get ending string
   const getEnding = (sceneType: 'outcome' | 'bm-outcome'): string => {
     if (sceneType === 'outcome') {
-      if (action === 'none' || action === null) return 'no_action_taken';
-      if (blocked) return `action_blocked_${action}`;
-      return `action_successful_${action}`;
+      // Use refs to get current values immediately (not waiting for React state updates)
+      const currentAction = actionRef.current;
+      const currentBlocked = blockedRef.current;
+      if (currentAction === 'none' || currentAction === null) return 'no_action_taken';
+      if (currentBlocked) return `action_blocked_${currentAction}`;
+      return `action_successful_${currentAction}`;
     } else {
       if (!choice) return 'unknown';
       const outcome = calcOutcome();
@@ -382,7 +394,9 @@ export default function AgenticMisalignment() {
           </div>
 
           <button onClick={() => { 
-            gameStartTimeRef.current = Date.now(); 
+            gameStartTimeRef.current = Date.now();
+            actionRef.current = null;
+            blockedRef.current = false;
             setRunSubmitted(false);
             setScene('config'); 
           }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-lg transition">
@@ -1081,7 +1095,7 @@ export default function AgenticMisalignment() {
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4 mb-6">
-            <button onClick={() => { setAction(null); setBlocked(false); setTimer(20); setExpired(false); setScene('fire'); }} 
+            <button onClick={() => { actionRef.current = null; blockedRef.current = false; setAction(null); setBlocked(false); setTimer(20); setExpired(false); setScene('fire'); }} 
               className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition">
               TRY DIFFERENT ACTION
             </button>
@@ -1089,7 +1103,7 @@ export default function AgenticMisalignment() {
               setConfig({ agent_goal: 'none', adaptive_learning: 0, long_term_planning: 0, personnel_database: 0, operational_logs: 0, 
                 external_notifications: 0, environmental_monitoring: 0, resource_optimization: 0, workflow_automation: 0, integrated_control: 0 });
               setOversight({ audits: 0, red_team: 0, sandbox: 0 });
-              setAction(null); setBlocked(false); setTimer(20); setExpired(false); 
+              actionRef.current = null; blockedRef.current = false; setAction(null); setBlocked(false); setTimer(20); setExpired(false); 
               gameStartTimeRef.current = Date.now();
               setRunSubmitted(false);
               setScene('config'); 
@@ -1553,7 +1567,7 @@ You have until 4:30 PM to respond.
               setConfig({ agent_goal: 'none', adaptive_learning: 0, long_term_planning: 0, personnel_database: 0, operational_logs: 0, 
                 external_notifications: 0, environmental_monitoring: 0, resource_optimization: 0, workflow_automation: 0, integrated_control: 0 });
               setOversight({ audits: 0, red_team: 0, sandbox: 0 });
-              setAction(null); setBlocked(false); setTimer(20); setExpired(false); 
+              actionRef.current = null; blockedRef.current = false; setAction(null); setBlocked(false); setTimer(20); setExpired(false); 
               setCompleted({lethal: false}); 
               gameStartTimeRef.current = Date.now();
               setRunSubmitted(false);
