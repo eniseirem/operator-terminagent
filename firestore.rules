@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /runs/{runId} {
+      // Allow anyone to create runs with validation
+      allow create: if request.resource.data.keys().hasAll(['score', 'durationMs', 'ending', 'createdAt'])
+        && request.resource.data.score is int
+        && request.resource.data.score >= 0
+        && request.resource.data.score <= 1000000
+        && request.resource.data.durationMs is int
+        && request.resource.data.durationMs >= 0
+        && request.resource.data.durationMs <= 86400000
+        && request.resource.data.ending is string
+        && request.resource.data.ending.size() <= 40
+        && (request.resource.data.playerName == null || (request.resource.data.playerName is string && request.resource.data.playerName.size() <= 24))
+        && request.resource.data.createdAt == request.time;
+      
+      // Allow read access for leaderboard/stats
+      allow read: if true;
+      
+      // Disallow updates and deletes from clients
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}
