@@ -35,6 +35,7 @@ A browser-based decision game exploring AI alignment and misalignment concepts.
 - **Live Leaderboard**: Real-time leaderboard showing top players by survival/death counts (live site only)
 - **Statistics Dashboard**: View action-by-action survival and death rates from the last 24 hours (live site only)
 - **Session Tracking**: Player names persist across sessions with unique session IDs per device
+- **Class Session System**: Create and join multiplayer sessions where players vote on AI configuration (live site only)
 
 ## Research Basis
 
@@ -66,6 +67,12 @@ The live site at [terminate-trap.web.app](https://terminate-trap.web.app) includ
 - **Run Tracking**: All game runs are saved with player name, score, duration, and ending
 - **24-Hour Stats**: View statistics from the last 24 hours of gameplay
 - **Session Persistence**: Player names persist across browser sessions
+- **Class Session System**: Multiplayer configuration voting system for educational use
+  - Host creates a session and shares a join code
+  - Players join and vote on AI configuration options
+  - Host aggregates votes and can edit the final configuration
+  - All players play with the same locked configuration
+  - Session-filtered leaderboard and stats available
 
 ### Leaderboard Features
 - Aggregated by player name (with unique session IDs per device)
@@ -79,7 +86,19 @@ The live site at [terminate-trap.web.app](https://terminate-trap.web.app) includ
   - Action name (Call, Alarm, Extinguisher, Shutdown, Blackmail, Report, Request, Accept, None)
   - Survival count (green)
   - Death count (red)
-  - Total attempts  
+  - Total attempts
+
+### Class Session System
+- **Create Sessions**: Host generates a unique join code (6-8 characters)
+- **Join Sessions**: Players enter join code to participate
+- **Vote on Configuration**: Players vote on model, goal, and all boundary settings
+- **Aggregation**: System aggregates votes using majority rule (categorical) and mode with highest level (numeric)
+- **Host Control**: Host can edit aggregated configuration before locking
+- **Locked Play**: Once locked, all players use the same configuration
+- **Session Tracking**: Runs are tagged with session ID and configuration hash
+- **Filtered Views**: View leaderboard and stats filtered by session
+
+See [SESSION_SYSTEM.md](./SESSION_SYSTEM.md) for detailed documentation.  
 
 ## Local Development
 
