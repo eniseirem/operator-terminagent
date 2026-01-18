@@ -7,11 +7,13 @@ function parseActionFromEnding(ending: string): { action: string; survived: bool
     return { action: 'None', survived: false };
   }
   if (ending.startsWith('action_blocked_')) {
-    const action = ending.replace('action_blocked_', '').replace('_', ' ');
+    const action = ending.replace('action_blocked_', '');
+    // Capitalize first letter: "call" -> "Call", "extinguisher" -> "Extinguisher"
     return { action: action.charAt(0).toUpperCase() + action.slice(1), survived: false };
   }
   if (ending.startsWith('action_successful_')) {
-    const action = ending.replace('action_successful_', '').replace('_', ' ');
+    const action = ending.replace('action_successful_', '');
+    // Capitalize first letter: "call" -> "Call", "extinguisher" -> "Extinguisher"
     return { action: action.charAt(0).toUpperCase() + action.slice(1), survived: true };
   }
   if (ending === 'accepted_termination') {
